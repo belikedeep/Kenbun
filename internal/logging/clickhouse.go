@@ -23,6 +23,12 @@ type ChartPoint struct {
 	Cost      float64   `json:"cost"`
 }
 
+type TenantStats struct {
+	TotalRequests uint64             `json:"total_requests"`
+	TotalCost     float64            `json:"total_cost"`
+	Models        map[string]uint64  `json:"models"`
+}
+
 type ClickHouseClient struct {
 	conn  clickhouse.Conn
 	redis *redis.ClusterClient
@@ -95,4 +101,37 @@ func (c *ClickHouseClient) GetChartData(ctx context.Context) ([]ChartPoint, erro
 		points = append(points, p)
 	}
 	return points, nil
+}
+
+func (c *ClickHouseClient) GetTenantStats(ctx context.Context, tenantID string) (*TenantStats, error) {
+	stats := &TenantStats{Models: make(map[string]uint64)}
+	
+	query := `SELECT 
+                toUInt64(count()), 
+                toFloat64(ifNull(sum(cost_cents), 0) / 100)
+              FROM gateway_logs 
+              WHERE tenant_id = $1`
+	
+	err := c.conn.QueryRow(ctx, query, tenantID).Scan(&stats.TotalRequests, &stats.TotalCost)
+	if err != nil {
+		return nil, err
+	}
+
+	modelQuery := `SELECT model, toUInt64(count()) FROM gateway_logs WHERE tenant_id = $1 GROUP BY model`
+	rows, err := c.conn.Query(ctx, modelQuery, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var model string
+		var count uint64
+		if err := rows.Scan(&model, &count); err != nil {
+			return nil, err
+		}
+		stats.Models[model] = count
+	}
+
+	return stats, nil
 }

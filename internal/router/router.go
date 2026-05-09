@@ -21,6 +21,7 @@ type HealthMonitor interface {
 	RecordSuccess(provider string, latency time.Duration)
 	RecordError(provider string, statusCode int)
 	GetState(provider string) ProviderState
+	ForceFailure(provider string)
 }
 
 type providerMetrics struct {
@@ -82,6 +83,15 @@ func (m *EWMAMonitor) RecordError(provider string, statusCode int) {
 
 	// Update error rate (1.0 = failure, 0.0 = success)
 	pm.errorRate = (pm.alpha * 1.0) + ((1 - pm.alpha) * pm.errorRate)
+}
+
+func (m *EWMAMonitor) ForceFailure(provider string) {
+	pm := m.getMetrics(provider)
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	// Set error rate to 1.0 (100%)
+	pm.errorRate = 1.0
 }
 
 func (m *EWMAMonitor) GetState(provider string) ProviderState {

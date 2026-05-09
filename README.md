@@ -44,6 +44,41 @@ go run cmd/gateway/main.go
 
 ---
 
+## Operational Guide
+
+### 1. Running Tests
+```bash
+go test ./internal/...
+```
+
+### 2. Failure Simulation (Interviewer Guide)
+Kenbun provides an Admin API to manually force provider failures and observe the gateway's resilience:
+
+**Inject a Failure:**
+```bash
+curl -X POST http://localhost:8080/admin/providers/openai/fail \
+     -H "X-Admin-Token: kb-master-key"
+```
+After this, the `LatencyAwareSelector` will detect the unhealthy state and route all traffic to alternative providers (e.g., Anthropic or Ollama) until the health monitor senses recovery.
+
+### 3. Querying Metrics & Logs
+You can query ClickHouse directly or use the Admin API:
+
+**Get Tenant Stats (Spend & Model Usage):**
+```bash
+# Replace {id} with a tenant ID from the DB
+curl http://localhost:8080/admin/tenants/{id}/stats \
+     -H "X-Admin-Token: kb-master-key"
+```
+
+**Stream Live Logs:**
+```bash
+curl -N http://localhost:8080/admin/logs/stream \
+     -H "X-Admin-Token: kb-master-key"
+```
+
+---
+
 ## License
 
 Apache 2.0 - See [LICENSE](LICENSE) for details.

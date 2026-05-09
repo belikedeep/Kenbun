@@ -17,13 +17,15 @@ import (
 type AdminHandler struct {
 	db          *db.Client
 	ch          *logging.ClickHouseClient
+	monitor     HealthMonitor
 	adminSecret string
 }
 
-func NewAdminHandler(db *db.Client, ch *logging.ClickHouseClient, secret string) *AdminHandler {
+func NewAdminHandler(db *db.Client, ch *logging.ClickHouseClient, monitor HealthMonitor, secret string) *AdminHandler {
 	return &AdminHandler{
 		db:          db,
 		ch:          ch,
+		monitor:     monitor,
 		adminSecret: secret,
 	}
 }
@@ -47,9 +49,11 @@ func (h *AdminHandler) RegisterRoutes(r chi.Router) {
 	r.Use(h.AuthMiddleware)
 	r.Get("/tenants", h.listTenants)
 	r.Post("/tenants", h.createTenant)
+	r.Get("/tenants/{id}/stats", h.getTenantStats)
 	r.Get("/stats", h.getStats)
 	r.Get("/charts", h.getCharts)
 	r.Get("/logs/stream", h.streamLogs)
+	r.Post("/providers/{name}/fail", h.failProvider)
 }
 
 func (h *AdminHandler) streamLogs(w http.ResponseWriter, r *http.Request) {
@@ -144,4 +148,21 @@ func (h *AdminHandler) getCharts(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(charts)
+}
+
+func (h *AdminHandler) getTenantStats(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	stats, err := h.ch.GetTenantStats(r.Context(), id)
+	if err != nil {
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+func (h *AdminHandler) failProvider(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	h.monitor.ForceFailure(name)
+	w.WriteHeader(http.StatusNoContent)
 }
