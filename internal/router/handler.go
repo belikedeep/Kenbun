@@ -22,8 +22,9 @@ type GatewayHandler struct {
 	limiter   ratelimit.Limiter
 	cache     cache.Cache
 	monitor   HealthMonitor
+	selector  ProviderSelector
 	logger    logging.Logger
-	providers map[string]provider.Provider
+	providers []provider.Provider
 }
 
 func NewGatewayHandler(
@@ -31,14 +32,16 @@ func NewGatewayHandler(
 	limiter ratelimit.Limiter,
 	cache cache.Cache,
 	monitor HealthMonitor,
+	selector ProviderSelector,
 	logger logging.Logger,
-	providers map[string]provider.Provider,
+	providers []provider.Provider,
 ) *GatewayHandler {
 	return &GatewayHandler{
 		db:        db,
 		limiter:   limiter,
 		cache:     cache,
 		monitor:   monitor,
+		selector:  selector,
 		logger:    logger,
 		providers: providers,
 	}
@@ -48,7 +51,7 @@ func (h *GatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	start := time.Now()
 
-	// 1. Auth
+	// 1. Auth & Tenant Lookup (Cached)
 	apiKey := r.Header.Get("X-API-Key")
 	if apiKey == "" {
 		http.Error(w, "missing_api_key", http.StatusUnauthorized)
@@ -57,14 +60,28 @@ func (h *GatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hash := sha256.Sum256([]byte(apiKey))
 	keyHash := hex.EncodeToString(hash[:])
 
-	tenant, err := h.db.GetTenantByAPIKeyHash(ctx, keyHash)
-	if err != nil {
-		fmt.Printf("Tenant lookup failed for hash %s: %v\n", keyHash, err)
-		http.Error(w, "internal_error", http.StatusInternalServerError)
+	var tenant *db.Tenant
+	tenantKey := "tenant:key:" + keyHash
+	if cached, _ := h.cache.Get(ctx, tenantKey); cached != nil {
+		json.Unmarshal(cached, &tenant)
+	} else {
+		var err error
+		tenant, err = h.db.GetTenantByAPIKeyHash(ctx, keyHash)
+		if err != nil {
+			http.Error(w, "invalid_api_key", http.StatusUnauthorized)
+			return
+		}
+		tenantData, _ := json.Marshal(tenant)
+		h.cache.Set(ctx, tenantKey, tenantData, 5*time.Minute)
+	}
+
+	// 2. Budget Enforcement (Local-first with Redis Sync)
+	if tenant.BudgetCents > 0 && tenant.SpentCents >= tenant.BudgetCents {
+		http.Error(w, "budget_exhausted", http.StatusPaymentRequired)
 		return
 	}
 
-	// 2. Rate Limit (Local-first)
+	// 3. Rate Limit (Local-first)
 	rlResult, err := h.limiter.Allow(ctx, tenant.ID, tenant.RateLimitRPM)
 	if err != nil || !rlResult.Allowed {
 		w.Header().Set("Retry-After", "1")
@@ -72,14 +89,14 @@ func (h *GatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Parse Request
+	// 4. Parse Request
 	var chatReq provider.ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&chatReq); err != nil {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
 
-	// 4. Cache Check (L1/L2)
+	// 5. Cache Check (L1/L2)
 	cacheKey := fmt.Sprintf("cache:%s:%s:%x", tenant.ID, chatReq.Model, sha256.Sum256([]byte(fmt.Sprintf("%v", chatReq.Messages))))
 	if !chatReq.Stream {
 		if cached, _ := h.cache.Get(ctx, cacheKey); cached != nil {
@@ -90,18 +107,11 @@ func (h *GatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 5. Routing & Dispatch
-	// Simplified: pick first healthy provider for now
-	var p provider.Provider
-	for _, prov := range h.providers {
-		if h.monitor.GetState(prov.Name()) != StateUnhealthy {
-			p = prov
-			break
-		}
-	}
+	// 6. Routing & Dispatch (with Allowlists & Resilience)
+	p := h.selector.Select(h.providers, tenant.ProviderAllowlist)
 
 	if p == nil {
-		http.Error(w, "no_healthy_providers", http.StatusServiceUnavailable)
+		http.Error(w, "no_available_providers", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -130,6 +140,7 @@ func (h *GatewayHandler) handleSync(w http.ResponseWriter, r *http.Request, p pr
 		Model:            resp.Model,
 		PromptTokens:     resp.PromptTokens,
 		CompletionTokens: resp.CompletionTokens,
+		CostCents:        provider.EstimateCost(resp.Model, resp.PromptTokens, resp.CompletionTokens),
 		LatencyMs:        int(latency.Milliseconds()),
 		Status:           200,
 		Timestamp:        time.Now().UnixNano(),

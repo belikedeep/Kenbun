@@ -98,10 +98,11 @@ func (h *AdminHandler) listTenants(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) createTenant(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name         string `json:"name"`
-		RateLimitRPM int    `json:"rate_limit_rpm"`
-		BudgetCents  int    `json:"budget_cents"`
-		APIKey       string `json:"api_key"`
+		Name              string   `json:"name"`
+		RateLimitRPM      int      `json:"rate_limit_rpm"`
+		BudgetCents       int      `json:"budget_cents"`
+		APIKey            string   `json:"api_key"`
+		ProviderAllowlist []string `json:"provider_allowlist"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.jsonError(w, err.Error(), http.StatusBadRequest)
@@ -111,7 +112,7 @@ func (h *AdminHandler) createTenant(w http.ResponseWriter, r *http.Request) {
 	hash := sha256.Sum256([]byte(req.APIKey))
 	keyHash := hex.EncodeToString(hash[:])
 
-	tenant, err := h.db.CreateTenant(r.Context(), req.Name, keyHash, req.RateLimitRPM, req.BudgetCents)
+	tenant, err := h.db.CreateTenant(r.Context(), req.Name, keyHash, req.RateLimitRPM, req.BudgetCents, req.ProviderAllowlist)
 	if err != nil {
 		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return

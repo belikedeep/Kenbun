@@ -10,13 +10,14 @@ import (
 )
 
 type Tenant struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	APIKeyHash   string `json:"api_key_hash"`
-	RateLimitRPM int    `json:"rate_limit_rpm"`
-	BudgetCents  int    `json:"budget_cents"`
-	SpentCents   int    `json:"spent_cents"`
-	IsActive     bool   `json:"is_active"`
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	APIKeyHash        string   `json:"api_key_hash"`
+	RateLimitRPM      int      `json:"rate_limit_rpm"`
+	BudgetCents       int      `json:"budget_cents"`
+	SpentCents        int      `json:"spent_cents"`
+	ProviderAllowlist []string `json:"provider_allowlist"`
+	IsActive          bool     `json:"is_active"`
 }
 
 type Client struct {
@@ -47,11 +48,11 @@ func (c *Client) Close() {
 
 func (c *Client) GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenant, error) {
 	var t Tenant
-	query := `SELECT id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, is_active 
+	query := `SELECT id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, provider_allowlist, is_active 
               FROM tenants WHERE api_key_hash = $1 LIMIT 1`
 	
 	err := c.Pool.QueryRow(ctx, query, hash).Scan(
-		&t.ID, &t.Name, &t.APIKeyHash, &t.RateLimitRPM, &t.BudgetCents, &t.SpentCents, &t.IsActive,
+		&t.ID, &t.Name, &t.APIKeyHash, &t.RateLimitRPM, &t.BudgetCents, &t.SpentCents, &t.ProviderAllowlist, &t.IsActive,
 	)
 	if err != nil {
 		return nil, err
@@ -61,7 +62,7 @@ func (c *Client) GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenan
 }
 
 func (c *Client) GetAllTenants(ctx context.Context) ([]Tenant, error) {
-	query := `SELECT id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, is_active FROM tenants ORDER BY created_at DESC`
+	query := `SELECT id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, provider_allowlist, is_active FROM tenants ORDER BY created_at DESC`
 	rows, err := c.Pool.Query(ctx, query)
 	if err != nil {
 		return nil, err
@@ -71,7 +72,7 @@ func (c *Client) GetAllTenants(ctx context.Context) ([]Tenant, error) {
 	var tenants []Tenant
 	for rows.Next() {
 		var t Tenant
-		if err := rows.Scan(&t.ID, &t.Name, &t.APIKeyHash, &t.RateLimitRPM, &t.BudgetCents, &t.SpentCents, &t.IsActive); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.APIKeyHash, &t.RateLimitRPM, &t.BudgetCents, &t.SpentCents, &t.ProviderAllowlist, &t.IsActive); err != nil {
 			return nil, err
 		}
 		tenants = append(tenants, t)
@@ -79,14 +80,14 @@ func (c *Client) GetAllTenants(ctx context.Context) ([]Tenant, error) {
 	return tenants, nil
 }
 
-func (c *Client) CreateTenant(ctx context.Context, name, keyHash string, rpm, budget int) (*Tenant, error) {
-	query := `INSERT INTO tenants (name, api_key_hash, rate_limit_rpm, budget_cents) 
-              VALUES ($1, $2, $3, $4) 
-              RETURNING id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, is_active`
+func (c *Client) CreateTenant(ctx context.Context, name, keyHash string, rpm, budget int, allowlist []string) (*Tenant, error) {
+	query := `INSERT INTO tenants (name, api_key_hash, rate_limit_rpm, budget_cents, provider_allowlist) 
+              VALUES ($1, $2, $3, $4, $5) 
+              RETURNING id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, provider_allowlist, is_active`
 	
 	var t Tenant
-	err := c.Pool.QueryRow(ctx, query, name, keyHash, rpm, budget).Scan(
-		&t.ID, &t.Name, &t.APIKeyHash, &t.RateLimitRPM, &t.BudgetCents, &t.SpentCents, &t.IsActive,
+	err := c.Pool.QueryRow(ctx, query, name, keyHash, rpm, budget, allowlist).Scan(
+		&t.ID, &t.Name, &t.APIKeyHash, &t.RateLimitRPM, &t.BudgetCents, &t.SpentCents, &t.ProviderAllowlist, &t.IsActive,
 	)
 	if err != nil {
 		return nil, err

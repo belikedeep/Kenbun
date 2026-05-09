@@ -19,7 +19,7 @@ import (
 
 func main() {
 	gatewayURL := "http://localhost:8080/v1/chat/completions"
-	apiKey := "sk-kb-s96j0mjp1ch"
+	apiKey := "sk-kb-iux3n2bgcjm"
 
 	models := []string{"gpt-4o", "claude-3-sonnet", "gemini-1.5-pro"}
 	prompts := []string{

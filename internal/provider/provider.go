@@ -44,3 +44,23 @@ type Provider interface {
 	// It returns a channel of chunks and a channel for errors.
 	ChatStream(ctx context.Context, req ChatRequest) (<-chan ChatChunk, <-chan error)
 }
+
+// EstimateCost calculates the approximate cost in cents for a request.
+func EstimateCost(model string, promptTokens, completionTokens int) float64 {
+	// Simplified pricing (cents per 1k tokens)
+	// GPT-4o: 0.5c / 1.5c
+	// Claude 3 Sonnet: 0.3c / 1.5c
+	// Default: 0.1c / 0.1c
+	var promptRate, completionRate float64
+	
+	switch {
+	case model == "gpt-4o":
+		promptRate, completionRate = 0.5, 1.5
+	case model == "claude-3-sonnet":
+		promptRate, completionRate = 0.3, 1.5
+	default:
+		promptRate, completionRate = 0.1, 0.2
+	}
+
+	return (float64(promptTokens) * promptRate / 1000.0) + (float64(completionTokens) * completionRate / 1000.0)
+}
