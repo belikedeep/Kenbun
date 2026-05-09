@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/cors"
 	"github.com/belikedeep/kenbun/internal/cache"
 	"github.com/belikedeep/kenbun/internal/config"
 	"github.com/belikedeep/kenbun/internal/db"
@@ -39,12 +40,12 @@ func main() {
 	})
 	defer redisCluster.Close()
 
-	// 3. Data Plane Ingestion (Kafka)
-	logger := logging.NewKafkaLogger(cfg.KafkaBrokers, "gateway_logs")
+	// 3. Data Plane Ingestion (Kafka + Redis Broadcast)
+	logger := logging.NewMultiLogger(cfg.KafkaBrokers, "gateway_logs", redisCluster)
 	defer logger.Close()
 
 	// 3.1 Data Plane Query (ClickHouse)
-	chClient, err := logging.NewClickHouseClient(cfg.ClickHouseAddr)
+	chClient, err := logging.NewClickHouseClient(cfg.ClickHouseAddr, redisCluster)
 	if err != nil {
 		fmt.Printf("Failed to connect to ClickHouse: %v\n", err)
 	}
@@ -88,10 +89,23 @@ func main() {
 		"openai":    openaiProv,
 		"anthropic": anthropicProv,
 		"gemini":    geminiProv,
+		"ollama":    provider.NewOllamaProvider(cfg.OllamaHost),
 	}
 
 	// 6. Router & Handler
 	r := chi.NewRouter()
+
+	// CORS
+	c := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-API-Key", "X-Admin-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: false, // Must be false if AllowedOrigins is "*"
+		MaxAge:           300,
+	})
+	r.Use(c.Handler)
+
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
@@ -99,7 +113,7 @@ func main() {
 	r.Use(middleware.Timeout(cfg.RequestTimeout))
 
 	handler := router.NewGatewayHandler(database, limiter, twoTierCache, monitor, logger, providers)
-	adminHandler := router.NewAdminHandler(database, chClient)
+	adminHandler := router.NewAdminHandler(database, chClient, cfg.AdminSecret)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

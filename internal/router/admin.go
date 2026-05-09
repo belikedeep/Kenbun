@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,28 +15,81 @@ import (
 )
 
 type AdminHandler struct {
-	db      *db.Client
-	ch      *logging.ClickHouseClient
+	db          *db.Client
+	ch          *logging.ClickHouseClient
+	adminSecret string
 }
 
-func NewAdminHandler(db *db.Client, ch *logging.ClickHouseClient) *AdminHandler {
+func NewAdminHandler(db *db.Client, ch *logging.ClickHouseClient, secret string) *AdminHandler {
 	return &AdminHandler{
-		db: db,
-		ch: ch,
+		db:          db,
+		ch:          ch,
+		adminSecret: secret,
 	}
 }
 
+func (h *AdminHandler) AuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("X-Admin-Token")
+		if token == "" {
+			token = r.URL.Query().Get("token")
+		}
+
+		if h.adminSecret == "" || token != h.adminSecret {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (h *AdminHandler) RegisterRoutes(r chi.Router) {
+	r.Use(h.AuthMiddleware)
 	r.Get("/tenants", h.listTenants)
 	r.Post("/tenants", h.createTenant)
 	r.Get("/stats", h.getStats)
 	r.Get("/charts", h.getCharts)
+	r.Get("/logs/stream", h.streamLogs)
+}
+
+func (h *AdminHandler) streamLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Subscribe to Redis
+	pubsub := h.ch.GetRedis().Subscribe(r.Context(), "logs:live")
+	defer pubsub.Close()
+
+	ch := pubsub.Channel()
+
+	for {
+		select {
+		case msg := <-ch:
+			fmt.Fprintf(w, "data: %s\n\n", msg.Payload)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+func (h *AdminHandler) jsonError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 func (h *AdminHandler) listTenants(w http.ResponseWriter, r *http.Request) {
 	tenants, err := h.db.GetAllTenants(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -50,7 +104,7 @@ func (h *AdminHandler) createTenant(w http.ResponseWriter, r *http.Request) {
 		APIKey       string `json:"api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		h.jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -59,7 +113,7 @@ func (h *AdminHandler) createTenant(w http.ResponseWriter, r *http.Request) {
 
 	tenant, err := h.db.CreateTenant(r.Context(), req.Name, keyHash, req.RateLimitRPM, req.BudgetCents)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -70,17 +124,21 @@ func (h *AdminHandler) createTenant(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) getStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.ch.GetGlobalStats(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fmt.Printf("GetGlobalStats failed: %v\n", err)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	fmt.Printf("Stats retrieved: %+v\n", stats)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	if err := json.NewEncoder(w).Encode(stats); err != nil {
+		fmt.Printf("Encoding failed: %v\n", err)
+	}
 }
 
 func (h *AdminHandler) getCharts(w http.ResponseWriter, r *http.Request) {
 	charts, err := h.ch.GetChartData(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

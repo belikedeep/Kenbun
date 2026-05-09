@@ -59,6 +59,7 @@ func (h *GatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	tenant, err := h.db.GetTenantByAPIKeyHash(ctx, keyHash)
 	if err != nil {
+		fmt.Printf("Tenant lookup failed for hash %s: %v\n", keyHash, err)
 		http.Error(w, "internal_error", http.StatusInternalServerError)
 		return
 	}
@@ -123,8 +124,7 @@ func (h *GatewayHandler) handleSync(w http.ResponseWriter, r *http.Request, p pr
 
 	h.monitor.RecordSuccess(p.Name(), latency)
 
-	// Async Logging (Kafka)
-	h.logger.Log(r.Context(), logging.LogEvent{
+	logEvent := logging.LogEvent{
 		TenantID:         tenant.ID,
 		Provider:         p.Name(),
 		Model:            resp.Model,
@@ -133,7 +133,12 @@ func (h *GatewayHandler) handleSync(w http.ResponseWriter, r *http.Request, p pr
 		LatencyMs:        int(latency.Milliseconds()),
 		Status:           200,
 		Timestamp:        time.Now().UnixNano(),
-	})
+	}
+
+	// Async Logging (Kafka)
+	h.logger.Log(r.Context(), logEvent)
+	// Real-time Broadcast (Redis Sampled)
+	h.logger.Broadcast(r.Context(), logEvent)
 
 	// Set Cache
 	respBody, _ := json.Marshal(resp)
@@ -159,7 +164,7 @@ func (h *GatewayHandler) handleStream(w http.ResponseWriter, r *http.Request, p 
 		case chunk, ok := <-chunks:
 			if !ok {
 				// Final log
-				h.logger.Log(r.Context(), logging.LogEvent{
+				logEvent := logging.LogEvent{
 					TenantID:         tenant.ID,
 					Provider:         p.Name(),
 					Model:            req.Model,
@@ -168,7 +173,9 @@ func (h *GatewayHandler) handleStream(w http.ResponseWriter, r *http.Request, p 
 					LatencyMs:        int(time.Since(start).Milliseconds()),
 					Status:           200,
 					Timestamp:        time.Now().UnixNano(),
-				})
+				}
+				h.logger.Log(r.Context(), logEvent)
+				h.logger.Broadcast(r.Context(), logEvent)
 				return
 			}
 			totalPromptTokens += chunk.PromptTokens

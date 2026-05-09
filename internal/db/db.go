@@ -10,13 +10,13 @@ import (
 )
 
 type Tenant struct {
-	ID           string
-	Name         string
-	APIKeyHash   string
-	RateLimitRPM int
-	BudgetCents  int
-	SpentCents   int
-	IsActive     bool
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	APIKeyHash   string `json:"api_key_hash"`
+	RateLimitRPM int    `json:"rate_limit_rpm"`
+	BudgetCents  int    `json:"budget_cents"`
+	SpentCents   int    `json:"spent_cents"`
+	IsActive     bool   `json:"is_active"`
 }
 
 type Client struct {

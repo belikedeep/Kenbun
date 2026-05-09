@@ -8,7 +8,9 @@ require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/generative-ai-go v0.20.1
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.19.0
+	github.com/rs/cors v1.11.1
 	github.com/sashabaranov/go-openai v1.41.2
 	github.com/segmentio/kafka-go v0.4.51
 	google.golang.org/api v0.278.0
