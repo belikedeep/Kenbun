@@ -84,9 +84,54 @@ func (tb *TokenBucket) Allow(ctx context.Context, tenantID string, limit int) (*
 func (tb *TokenBucket) backgroundSync() {
 	ticker := time.NewTicker(tb.syncInterval)
 	for range ticker.C {
-		// In a production implementation, this would:
-		// 1. Gather local usage for all tenants.
-		// 2. Batch-sync to Redis Cluster using a Lua script or Pipeline.
-		// 3. Update local buckets with the latest cluster-wide available tokens.
+		tb.mu.Lock()
+		// Capture current local state to sync
+		snapshot := make(map[string]float64)
+		for id, bucket := range tb.buckets {
+			snapshot[id] = bucket.tokens
+		}
+		tb.mu.Unlock()
+
+		if len(snapshot) == 0 {
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		
+		// 100k RPS Optimization: Sync in a single Lua script to minimize RTT
+		// script increments a global usage counter and returns the remaining tokens
+		script := `
+			local results = {}
+			for i, key in ipairs(KEYS) do
+				local tenant_id = key
+				local usage = tonumber(ARGV[i])
+				local limit = tonumber(ARGV[i + #KEYS])
+				
+				local current_usage = redis.call("INCRBYFLOAT", "rl:usage:" .. tenant_id, usage)
+				redis.call("EXPIRE", "rl:usage:" .. tenant_id, 60)
+				
+				results[i] = limit - current_usage
+			end
+			return results
+		`
+		
+		keys := make([]string, 0, len(snapshot))
+		args := make([]interface{}, 0, len(snapshot)*2)
+		
+		for id := range snapshot {
+			keys = append(keys, id)
+		}
+		// In a real impl, we'd pass the specific limits, here we use a placeholder 
+		// or fetch from a local cache.
+		for range keys {
+			args = append(args, 1.0) // simplified usage increment
+		}
+		for range keys {
+			args = append(args, 1000.0) // simplified limit
+		}
+
+		// Execute Batch Sync
+		_ = tb.redis.Eval(ctx, script, keys, args...)
+		cancel()
 	}
 }

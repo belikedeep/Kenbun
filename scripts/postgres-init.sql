@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     rate_limit_rpm INTEGER NOT NULL DEFAULT 60,
     budget_cents INTEGER NOT NULL DEFAULT 1000,
     spent_cents INTEGER NOT NULL DEFAULT 0,
+    provider_allowlist TEXT[] DEFAULT '{}',
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now()
 );

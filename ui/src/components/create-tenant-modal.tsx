@@ -30,10 +30,17 @@ export function CreateTenantModal({ onCreated }: { onCreated: () => void }) {
     const apiKey = `sk-kb-${Math.random().toString(36).substring(2, 15)}`;
     
     try {
+      const providers = [];
+      if (formData.get("openai")) providers.push("openai");
+      if (formData.get("anthropic")) providers.push("anthropic");
+      if (formData.get("gemini")) providers.push("gemini");
+      if (formData.get("ollama")) providers.push("ollama");
+
       await createTenant({
         name: formData.get("name") as string,
         rate_limit_rpm: parseInt(formData.get("rpm") as string),
         budget_cents: parseInt(formData.get("budget") as string) * 100,
+        provider_allowlist: providers,
         api_key: apiKey,
       });
       setNewKey(apiKey);
@@ -58,12 +65,14 @@ export function CreateTenantModal({ onCreated }: { onCreated: () => void }) {
         setOpen(val);
         if (!val) setNewKey(null);
     }}>
-      <DialogTrigger render={
-        <Button className="gap-2">
-          <Plus className="w-4 h-4" />
-          Create Tenant
-        </Button>
-      } />
+      <DialogTrigger
+        render={
+          <Button className="gap-2">
+            <Plus className="w-4 h-4" />
+            Create Tenant
+          </Button>
+        }
+      />
       <DialogContent className="sm:max-w-[425px] bg-card border-border">
         {newKey ? (
           <div className="space-y-4 py-4 text-center">
@@ -110,6 +119,17 @@ export function CreateTenantModal({ onCreated }: { onCreated: () => void }) {
                 <div className="grid gap-2">
                   <Label htmlFor="budget">Monthly Budget ($)</Label>
                   <Input id="budget" name="budget" type="number" defaultValue="50" required />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Allowed Providers</Label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  {["openai", "anthropic", "gemini", "ollama"].map((p) => (
+                    <div key={p} className="flex items-center space-x-2">
+                      <input type="checkbox" id={p} name={p} defaultChecked className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                      <Label htmlFor={p} className="capitalize">{p}</Label>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

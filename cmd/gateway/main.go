@@ -101,6 +101,10 @@ func main() {
 	handler := router.NewGatewayHandler(database, limiter, twoTierCache, monitor, selector, logger, providers)
 	adminHandler := router.NewAdminHandler(database, chClient, cfg.AdminSecret)
 
+	// 7. Background Workers
+	budgetProcessor := db.NewBudgetProcessor(database, cfg.KafkaBrokers, "gateway_logs")
+	go budgetProcessor.Start(ctx)
+
 	r := chi.NewRouter()
 
 	// CORS

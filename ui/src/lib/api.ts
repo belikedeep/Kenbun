@@ -24,7 +24,13 @@ export async function getCharts() {
   return res.json();
 }
 
-export async function createTenant(data: { name: string; api_key: string; rate_limit_rpm: number; budget_cents: number }) {
+export async function createTenant(data: { 
+  name: string; 
+  api_key: string; 
+  rate_limit_rpm: number; 
+  budget_cents: number;
+  provider_allowlist: string[];
+}) {
   const res = await fetch(`${API_BASE}/tenants`, {
     method: "POST",
     headers,
