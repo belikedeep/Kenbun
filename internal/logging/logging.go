@@ -68,9 +68,9 @@ func (l *MultiLogger) Log(ctx context.Context, event LogEvent) error {
 
 func (l *MultiLogger) Broadcast(ctx context.Context, event LogEvent) error {
 	// 100k RPS Safety: Sampling Logic
-	// 1. Always broadcast errors (4xx/5xx)
-	// 2. Sample successes at 0.1% to prevent dashboard meltdown
-	shouldBroadcast := event.Status >= 400 || (time.Now().UnixNano()%1000 == 0)
+	// In production, you would sample successes at 0.1% to prevent dashboard meltdown.
+	// For local dev/demo, we send 100% so you can see the "Haki" in action.
+	shouldBroadcast := true // event.Status >= 400 || (time.Now().UnixNano()%10 == 0)
 
 	if !shouldBroadcast {
 		return nil

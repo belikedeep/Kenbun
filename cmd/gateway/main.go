@@ -110,7 +110,6 @@ func main() {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(cfg.RequestTimeout))
 
 	handler := router.NewGatewayHandler(database, limiter, twoTierCache, monitor, logger, providers)
 	adminHandler := router.NewAdminHandler(database, chClient, cfg.AdminSecret)
@@ -120,6 +119,7 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
+	// Chat completions (Streaming can last longer than standard timeout)
 	r.Post("/v1/chat/completions", handler.ServeHTTP)
 
 	// Admin API
