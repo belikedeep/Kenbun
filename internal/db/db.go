@@ -59,3 +59,37 @@ func (c *Client) GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenan
 
 	return &t, nil
 }
+
+func (c *Client) GetAllTenants(ctx context.Context) ([]Tenant, error) {
+	query := `SELECT id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, is_active FROM tenants ORDER BY created_at DESC`
+	rows, err := c.Pool.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tenants []Tenant
+	for rows.Next() {
+		var t Tenant
+		if err := rows.Scan(&t.ID, &t.Name, &t.APIKeyHash, &t.RateLimitRPM, &t.BudgetCents, &t.SpentCents, &t.IsActive); err != nil {
+			return nil, err
+		}
+		tenants = append(tenants, t)
+	}
+	return tenants, nil
+}
+
+func (c *Client) CreateTenant(ctx context.Context, name, keyHash string, rpm, budget int) (*Tenant, error) {
+	query := `INSERT INTO tenants (name, api_key_hash, rate_limit_rpm, budget_cents) 
+              VALUES ($1, $2, $3, $4) 
+              RETURNING id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, is_active`
+	
+	var t Tenant
+	err := c.Pool.QueryRow(ctx, query, name, keyHash, rpm, budget).Scan(
+		&t.ID, &t.Name, &t.APIKeyHash, &t.RateLimitRPM, &t.BudgetCents, &t.SpentCents, &t.IsActive,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}

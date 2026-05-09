@@ -43,24 +43,51 @@ func main() {
 	logger := logging.NewKafkaLogger(cfg.KafkaBrokers, "gateway_logs")
 	defer logger.Close()
 
+	// 3.1 Data Plane Query (ClickHouse)
+	chClient, err := logging.NewClickHouseClient(cfg.ClickHouseAddr)
+	if err != nil {
+		fmt.Printf("Failed to connect to ClickHouse: %v\n", err)
+	}
+
 	// 4. Systems Components
 	limiter := ratelimit.NewTokenBucket(redisCluster, cfg.RateLimitSyncFreq)
 	twoTierCache, _ := cache.NewTwoTierCache(redisCluster)
 	monitor := router.NewEWMAMonitor()
 
 	// 5. Providers
-	geminiProv, _ := provider.NewGeminiProvider(ctx, cfg.GeminiAPIKey)
+	// Use Mock as fallback if keys are missing
+	openaiKey := os.Getenv("OPENAI_API_KEY")
+	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
 
-	providers := map[string]provider.Provider{
-		"openai": provider.NewOpenAIProvider(os.Getenv("OPENAI_API_KEY")),
-		"anthropic": provider.NewAnthropicProvider(os.Getenv("ANTHROPIC_API_KEY"), &http.Client{
+	var openaiProv, anthropicProv provider.Provider
+	if openaiKey == "" {
+		openaiProv = provider.NewMockProvider("openai")
+	} else {
+		openaiProv = provider.NewOpenAIProvider(openaiKey)
+	}
+
+	if anthropicKey == "" {
+		anthropicProv = provider.NewMockProvider("anthropic")
+	} else {
+		anthropicProv = provider.NewAnthropicProvider(anthropicKey, &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConns:        1000,
 				MaxIdleConnsPerHost: 100,
 				IdleConnTimeout:     90 * time.Second,
 			},
-		}),
-		"gemini": geminiProv,
+		})
+	}
+
+	var geminiProv provider.Provider
+	geminiProv, _ = provider.NewGeminiProvider(ctx, cfg.GeminiAPIKey)
+	if geminiProv == nil {
+		geminiProv = provider.NewMockProvider("gemini")
+	}
+
+	providers := map[string]provider.Provider{
+		"openai":    openaiProv,
+		"anthropic": anthropicProv,
+		"gemini":    geminiProv,
 	}
 
 	// 6. Router & Handler
@@ -72,6 +99,7 @@ func main() {
 	r.Use(middleware.Timeout(cfg.RequestTimeout))
 
 	handler := router.NewGatewayHandler(database, limiter, twoTierCache, monitor, logger, providers)
+	adminHandler := router.NewAdminHandler(database, chClient)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -79,6 +107,11 @@ func main() {
 	})
 
 	r.Post("/v1/chat/completions", handler.ServeHTTP)
+
+	// Admin API
+	r.Route("/admin", func(r chi.Router) {
+		adminHandler.RegisterRoutes(r)
+	})
 
 	fmt.Printf("👁️ Kenbun Gateway starting on port %s...\n", cfg.Port)
 	server := &http.Server{
