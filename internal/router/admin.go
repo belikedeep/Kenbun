@@ -15,13 +15,13 @@ import (
 )
 
 type AdminHandler struct {
-	db          *db.Client
-	ch          *logging.ClickHouseClient
+	db          db.TenantRepository
+	ch          logging.AnalyticsRepository
 	monitor     HealthMonitor
 	adminSecret string
 }
 
-func NewAdminHandler(db *db.Client, ch *logging.ClickHouseClient, monitor HealthMonitor, secret string) *AdminHandler {
+func NewAdminHandler(db db.TenantRepository, ch logging.AnalyticsRepository, monitor HealthMonitor, secret string) *AdminHandler {
 	return &AdminHandler{
 		db:          db,
 		ch:          ch,
@@ -68,7 +68,12 @@ func (h *AdminHandler) streamLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Subscribe to Redis
-	pubsub := h.ch.GetRedis().Subscribe(r.Context(), "logs:live")
+	chClient, ok := h.ch.(*logging.ClickHouseClient)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	pubsub := chClient.GetRedis().Subscribe(r.Context(), "logs:live")
 	defer pubsub.Close()
 
 	ch := pubsub.Channel()

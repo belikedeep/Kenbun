@@ -29,6 +29,12 @@ type TenantStats struct {
 	Models        map[string]uint64  `json:"models"`
 }
 
+type AnalyticsRepository interface {
+	GetGlobalStats(ctx context.Context) (*GlobalStats, error)
+	GetChartData(ctx context.Context) ([]ChartPoint, error)
+	GetTenantStats(ctx context.Context, tenantID string) (*TenantStats, error)
+}
+
 type ClickHouseClient struct {
 	conn  clickhouse.Conn
 	redis *redis.ClusterClient

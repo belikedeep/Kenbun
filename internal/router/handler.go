@@ -18,7 +18,7 @@ import (
 )
 
 type GatewayHandler struct {
-	db        *db.Client
+	db        db.TenantRepository
 	limiter   ratelimit.Limiter
 	cache     cache.Cache
 	monitor   HealthMonitor
@@ -28,7 +28,7 @@ type GatewayHandler struct {
 }
 
 func NewGatewayHandler(
-	db *db.Client,
+	db db.TenantRepository,
 	limiter ratelimit.Limiter,
 	cache cache.Cache,
 	monitor HealthMonitor,

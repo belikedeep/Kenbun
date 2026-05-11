@@ -15,7 +15,7 @@ import (
 
 // BudgetProcessor consumes log events and updates tenant spending in PostgreSQL.
 type BudgetProcessor struct {
-	db           *Client
+	db           *PostgresClient
 	reader       *kafka.Reader
 	flushInterval time.Duration
 	batchSize    int
@@ -25,7 +25,7 @@ type BudgetProcessor struct {
 	lastFlush time.Time
 }
 
-func NewBudgetProcessor(db *Client, brokers []string, topic string) *BudgetProcessor {
+func NewBudgetProcessor(db *PostgresClient, brokers []string, topic string) *BudgetProcessor {
 	return &BudgetProcessor{
 		db: db,
 		reader: kafka.NewReader(kafka.ReaderConfig{

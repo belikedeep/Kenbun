@@ -20,11 +20,17 @@ type Tenant struct {
 	IsActive          bool     `json:"is_active"`
 }
 
-type Client struct {
+type TenantRepository interface {
+	GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenant, error)
+	GetAllTenants(ctx context.Context) ([]Tenant, error)
+	CreateTenant(ctx context.Context, name, keyHash string, rpm, budget int, allowlist []string) (*Tenant, error)
+}
+
+type PostgresClient struct {
 	Pool *pgxpool.Pool
 }
 
-func New(ctx context.Context, connString string) (*Client, error) {
+func New(ctx context.Context, connString string) (*PostgresClient, error) {
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse database url: %w", err)
@@ -39,14 +45,14 @@ func New(ctx context.Context, connString string) (*Client, error) {
 		return nil, fmt.Errorf("unable to create connection pool: %w", err)
 	}
 
-	return &Client{Pool: pool}, nil
+	return &PostgresClient{Pool: pool}, nil
 }
 
-func (c *Client) Close() {
+func (c *PostgresClient) Close() {
 	c.Pool.Close()
 }
 
-func (c *Client) GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenant, error) {
+func (c *PostgresClient) GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenant, error) {
 	var t Tenant
 	query := `SELECT id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, provider_allowlist, is_active 
               FROM tenants WHERE api_key_hash = $1 LIMIT 1`
@@ -61,7 +67,7 @@ func (c *Client) GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenan
 	return &t, nil
 }
 
-func (c *Client) GetAllTenants(ctx context.Context) ([]Tenant, error) {
+func (c *PostgresClient) GetAllTenants(ctx context.Context) ([]Tenant, error) {
 	query := `SELECT id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, provider_allowlist, is_active FROM tenants ORDER BY created_at DESC`
 	rows, err := c.Pool.Query(ctx, query)
 	if err != nil {
@@ -80,7 +86,7 @@ func (c *Client) GetAllTenants(ctx context.Context) ([]Tenant, error) {
 	return tenants, nil
 }
 
-func (c *Client) CreateTenant(ctx context.Context, name, keyHash string, rpm, budget int, allowlist []string) (*Tenant, error) {
+func (c *PostgresClient) CreateTenant(ctx context.Context, name, keyHash string, rpm, budget int, allowlist []string) (*Tenant, error) {
 	query := `INSERT INTO tenants (name, api_key_hash, rate_limit_rpm, budget_cents, provider_allowlist) 
               VALUES ($1, $2, $3, $4, $5) 
               RETURNING id, name, api_key_hash, rate_limit_rpm, budget_cents, spent_cents, provider_allowlist, is_active`
