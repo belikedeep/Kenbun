@@ -52,7 +52,12 @@ func main() {
 
 	// 4. Systems Components
 	limiter := ratelimit.NewTokenBucket(redisCluster, cfg.RateLimitSyncFreq)
-	twoTierCache, _ := cache.NewTwoTierCache(redisCluster)
+	var gatewayCache cache.Cache
+	if len(cfg.RedisAddrs) == 0 || cfg.RedisAddrs[0] == "" {
+		gatewayCache = cache.NewMemoryCache()
+	} else {
+		gatewayCache, _ = cache.NewTwoTierCache(redisCluster)
+	}
 	monitor := router.NewEWMAMonitor()
 
 	// 5. Providers with Resilience
@@ -98,7 +103,7 @@ func main() {
 
 	// 6. Router & Selector
 	selector := router.NewLatencyAwareSelector(monitor)
-	handler := router.NewGatewayHandler(database, limiter, twoTierCache, monitor, selector, logger, providers)
+	handler := router.NewGatewayHandler(database, limiter, gatewayCache, monitor, selector, logger, providers)
 	adminHandler := router.NewAdminHandler(database, chClient, monitor, cfg.AdminSecret)
 
 	// 7. Background Workers

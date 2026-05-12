@@ -22,7 +22,7 @@ type TwoTierCache struct {
 	redis *redis.ClusterClient
 }
 
-func NewTwoTierCache(redisClient *redis.ClusterClient) (*TwoTierCache, error) {
+func NewTwoTierCache(redisClient *redis.ClusterClient) (Cache, error) {
 	l1, err := ristretto.NewCache(&ristretto.Config{
 		NumCounters: 1e7,     // number of keys to track frequency of (10M).
 		MaxCost:     1 << 30, // maximum cost of cache (1GB).
