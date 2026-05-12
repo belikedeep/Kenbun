@@ -39,3 +39,9 @@ export async function createTenant(data: {
   if (!res.ok) throw new Error("Failed to create tenant");
   return res.json();
 }
+
+export async function toggleTenantStatus(id: string) {
+  // Mock API call - in a real app, this would be a PATCH/PUT request
+  console.log(`[Mock API] Toggling status for tenant: ${id}`);
+  return new Promise((resolve) => setTimeout(resolve, 500));
+}

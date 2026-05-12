@@ -12,13 +12,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, Key, ShieldCheck } from "lucide-react";
-import { getTenants } from "@/lib/api";
+import { Plus, Key, ShieldCheck, Loader2 } from "lucide-react";
+import { getTenants, toggleTenantStatus } from "@/lib/api";
 import { CreateTenantModal } from "@/components/create-tenant-modal";
 
 export default function TenantsPage() {
   const [tenants, setTenants] = useState<any[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   async function fetchData() {
     try {
@@ -26,6 +27,19 @@ export default function TenantsPage() {
       setTenants(data || []);
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function handleToggleStatus(tenant: any) {
+    setTogglingId(tenant.id);
+    console.log("Toggling tenant:", tenant.id, tenant.name);
+    try {
+      await toggleTenantStatus(tenant.id);
+      await fetchData();
+    } catch (err) {
+      console.error("Failed to toggle status:", err);
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -82,11 +96,24 @@ export default function TenantsPage() {
                   <TableCell>${(tenant.budget_cents / 100).toFixed(2)}</TableCell>
                   <TableCell>${(tenant.spent_cents / 100).toFixed(2)}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon">
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => console.log("Rotate key for:", tenant.id)}
+                    >
                       <Key className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="icon">
-                      <ShieldCheck className="w-4 h-4" />
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      disabled={togglingId === tenant.id}
+                      onClick={() => handleToggleStatus(tenant)}
+                    >
+                      {togglingId === tenant.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4" />
+                      )}
                     </Button>
                   </TableCell>
                 </TableRow>
