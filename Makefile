@@ -1,6 +1,6 @@
 # Kenbun Gateway - Observation Haki for AI Infrastructure
 
-.PHONY: help up down gateway ui simulate clean
+.PHONY: help up down gateway ui simulate clean build
 
 help:
 	@echo "👁️ Kenbun Gateway - Makefile"
@@ -11,6 +11,7 @@ help:
 	@echo "  make gateway    Run the Go Gateway (Data Plane)"
 	@echo "  make ui         Run the Next.js Dashboard (Control Plane)"
 	@echo "  make simulate   Run the Haki Simulator (Generate load)"
+	@echo "  make build      Build the Go binaries"
 	@echo "  make clean      Remove build artifacts and Docker volumes"
 
 up:
@@ -21,6 +22,9 @@ down:
 
 gateway:
 	go run cmd/gateway/main.go
+
+build:
+	go build -o bin/gateway cmd/gateway/main.go
 
 ui:
 	cd ui && bun run dev

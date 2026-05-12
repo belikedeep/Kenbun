@@ -15,7 +15,7 @@ import (
 
 // BudgetProcessor consumes log events and updates tenant spending in PostgreSQL.
 type BudgetProcessor struct {
-	db           *PostgresClient
+	db           TenantRepository
 	reader       *kafka.Reader
 	flushInterval time.Duration
 	batchSize    int
@@ -25,7 +25,7 @@ type BudgetProcessor struct {
 	lastFlush time.Time
 }
 
-func NewBudgetProcessor(db *PostgresClient, brokers []string, topic string) *BudgetProcessor {
+func NewBudgetProcessor(db TenantRepository, brokers []string, topic string) *BudgetProcessor {
 	return &BudgetProcessor{
 		db: db,
 		reader: kafka.NewReader(kafka.ReaderConfig{
@@ -94,8 +94,7 @@ func (p *BudgetProcessor) flush(ctx context.Context) {
 	// In a real high-throughput scenario, you might use a temp table and a JOIN
 	// For this assignment, we'll iterate through the map to keep it simple but decoupled.
 	for tenantID, cost := range updates {
-		query := `UPDATE tenants SET spent_cents = spent_cents + $1 WHERE id = $2`
-		_, err := p.db.Pool.Exec(ctx, query, int(cost), tenantID)
+		err := p.db.UpdateTenantSpend(ctx, tenantID, int(cost))
 		if err != nil {
 			fmt.Printf("❌ Failed to update budget for tenant %s: %v\n", tenantID, err)
 		}

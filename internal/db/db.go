@@ -24,13 +24,15 @@ type TenantRepository interface {
 	GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenant, error)
 	GetAllTenants(ctx context.Context) ([]Tenant, error)
 	CreateTenant(ctx context.Context, name, keyHash string, rpm, budget int, allowlist []string) (*Tenant, error)
+	UpdateTenantSpend(ctx context.Context, tenantID string, cents int) error
+	Close()
 }
 
 type PostgresClient struct {
 	Pool *pgxpool.Pool
 }
 
-func New(ctx context.Context, connString string) (*PostgresClient, error) {
+func New(ctx context.Context, connString string) (TenantRepository, error) {
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse database url: %w", err)
@@ -50,6 +52,12 @@ func New(ctx context.Context, connString string) (*PostgresClient, error) {
 
 func (c *PostgresClient) Close() {
 	c.Pool.Close()
+}
+
+func (c *PostgresClient) UpdateTenantSpend(ctx context.Context, tenantID string, cents int) error {
+	query := `UPDATE tenants SET spent_cents = spent_cents + $1 WHERE id = $2`
+	_, err := c.Pool.Exec(ctx, query, cents, tenantID)
+	return err
 }
 
 func (c *PostgresClient) GetTenantByAPIKeyHash(ctx context.Context, hash string) (*Tenant, error) {

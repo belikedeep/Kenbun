@@ -40,7 +40,7 @@ type ClickHouseClient struct {
 	redis *redis.ClusterClient
 }
 
-func NewClickHouseClient(addr string, rdb *redis.ClusterClient) (*ClickHouseClient, error) {
+func NewClickHouseClient(addr string, rdb *redis.ClusterClient) (AnalyticsRepository, error) {
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{addr},
 		Auth: clickhouse.Auth{
